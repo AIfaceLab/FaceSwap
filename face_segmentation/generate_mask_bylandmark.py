@@ -97,4 +97,5 @@ def evaluate(respth='./results/data_src', dspth='../data'):
 
 
 if __name__ == "__main__":
-    evaluate(dspth='../data/data_src_zyl', respth='./results/data_src_zyl')
+    evaluate(dspth=r'E:\DeepFaceLabCUDA10.1AVX\workspace\data_src\aligned',
+             respth='./results/data_src_girlB')

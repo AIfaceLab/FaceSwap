@@ -4,6 +4,7 @@ from tqdm import tqdm
 import numpy as np
 import torch
 from utils import umeyama
+from imagelib import gen_warp_params, warp_by_params
 
 
 class MergeDataSet(Dataset):
@@ -32,8 +33,11 @@ class FaceData(Dataset):
             image = cv2.imread(
                 str(image_path), cv2.IMREAD_UNCHANGED)
             # image = cv2.cvtColor(image, cv2.COLOR_BGRA2RGBA)
-            image = cv2.resize(image, (image_shape, image_shape))
-
+            if image.shape[0] != image_shape:
+                image = cv2.resize(
+                    image, (image_shape, image_shape), cv2.INTER_CUBIC)
+                # cv2.imshow("test", image)
+                # cv2.waitKey(0)
             self.images.append(image)
         print("there are {} images in the dataset".format(len(self.images)))
 
@@ -105,23 +109,26 @@ class RandomRotation(object):
         # angle to rotate clockwise), then grab the sine and cosine
         # (i.e., the rotation components of the matrix)
         M = cv2.getRotationMatrix2D((cX, cY), -angle, 1.0)
-        cos = np.abs(M[0, 0])
-        sin = np.abs(M[0, 1])
+        # cos = np.abs(M[0, 0])
+        # sin = np.abs(M[0, 1])
 
-        # compute the new bounding dimensions of the image
-        nW = int((h * sin) + (w * cos))
-        nH = int((h * cos) + (w * sin))
+        # # compute the new bounding dimensions of the image
+        # nW = int((h * sin) + (w * cos))
+        # nH = int((h * cos) + (w * sin))
 
-        # adjust the rotation matrix to take into account translation
-        M[0, 2] += (nW / 2) - cX
-        M[1, 2] += (nH / 2) - cY
+        # # adjust the rotation matrix to take into account translation
+        # M[0, 2] += (nW / 2) - cX
+        # M[1, 2] += (nH / 2) - cY
 
         # perform the actual rotation and return the image
-        return cv2.warpAffine(image, M, (w, h), flags=cv2.INTER_NEAREST)
+        return cv2.warpAffine(image, M, (w, h), flags=cv2.INTER_CUBIC)
 
-    def __call__(self, image):
+    def __call__(self, images):
         angle = np.random.randint(-self.angle, self.angle)
-        return self.rotate_bound(image, angle)
+        out = []
+        for image in images:
+            out.append(self.rotate_bound(image, angle))
+        return out
 
 
 class RandomWarp(object):
@@ -131,7 +138,8 @@ class RandomWarp(object):
 
     def random_warp_rev(self, image, res):
         # assert image.shape == (256, 256, 6)
-        image = cv2.resize(image, (256, 256))
+        if image.shape[0] != res:
+            image = cv2.resize(image, (256, 256))
         res_scale = 256//64
         assert res_scale >= 1, f"Resolution should be >= 64. Recieved {res}."
 
@@ -164,3 +172,26 @@ class RandomWarp(object):
 
     def __call__(self, image):
         return self.random_warp_rev(image, self.res)
+
+
+class TransformDeepfakes(object):
+    def __init__(self, rotation_range=[-10, 10], scale_range=[-0.5, 0.5], tx_range=[-0.05, 0.05], ty_range=[-0.05, 0.05],
+                 warp=True, transform=True, flip=True, is_border_replicate=True):
+        super().__init__()
+        self.rotation_range = rotation_range
+        self.scale_range = scale_range
+        self.tx_range = tx_range
+        self.ty_range = ty_range
+        self.flip = flip
+        self.warp = warp
+        self.transform = transform
+        self.is_border_replicate = is_border_replicate
+
+    def __call__(self, image):
+        transform_params = gen_warp_params(
+            image, self.flip, self.rotation_range, self.scale_range, self.tx_range, self.ty_range)
+        image_bgra = warp_by_params(params=transform_params, img=image, warp=self.warp,
+                                    transform=self.transform, flip=self.flip, is_border_replicate=self.is_border_replicate)
+        if transform_params['flip']:
+            image = cv2.flip(image, 1)
+        return image_bgra, image

@@ -10,6 +10,7 @@ from tqdm import tqdm
 import pytorch_ssim
 
 from Model import Encoder, Decoder
+
 from utils import *
 from dataset import *
 from LossFunction import MaskLoss, LossCnt
@@ -20,20 +21,25 @@ if __name__ == '__main__':
     num_epoch = 200000
     batch_size = 4
     src_device = "cuda:0"
-    obj_device = "cuda:1"
-    input_size = 256
+    obj_device = "cuda:0"
+    encoder_device = "cuda:0"
+    maskloss_device = "cuda:0"
+    mseloss_device = "cuda:0"
+    input_size = 128
     len_iteration = 5
     # load datas
     src_image_paths = get_image_list(
-        r"face_segmentation/results/data_src_zyl")
+        r"face_segmentation/results/data_src_girlB")
     obj_image_paths = get_image_list(
-        r"face_segmentation/results/data_obj_cky")
+        r"face_segmentation/results/data_obj_girlA")
 
     # data
     data_transforms = transforms.Compose([
-        FlipHorizontally(),
-        RandomRotation(10),
-        RandomWarp(res=input_size)
+        # FlipHorizontally(),
+        # RandomWarp(res=input_size)
+        TransformDeepfakes(warp=True, transform=False,
+                           is_border_replicate=True),
+        RandomRotation(20)
     ])
 
     src_dataset = FaceData(src_image_paths, input_size, data_transforms)
@@ -49,18 +55,18 @@ if __name__ == '__main__':
                             shuffle=True, num_workers=0)
 
     # initialize model， A represent src，B represent obj
-    Encoder_AB = Encoder(shape=input_size).cuda()
-    Decoder_A = Decoder(shape=input_size).cuda()
-    Decoder_B = Decoder(shape=input_size).cuda()
+    Encoder_AB = Encoder(shape=input_size).to(encoder_device)
+    Decoder_A = Decoder(shape=input_size).to(src_device)
+    Decoder_B = Decoder(shape=input_size).to(obj_device)
 
     # -------------------the different loss functions----------------------
     criterion_likely = pytorch_ssim.SSIM(window_size=11)
     criterion_pixel = nn.MSELoss()
 
     criterion_likely_mask = pytorch_ssim.SSIM(window_size=11)
-    criterion_pixel_mask = nn.MSELoss()
+    criterion_pixel_mask = nn.MSELoss().to(mseloss_device)
     criterion_cnt = LossCnt(device="cuda:0")
-    criterion = MaskLoss()
+    criterion = MaskLoss(device=maskloss_device).to(maskloss_device)
     # ----------------------------------------------------------------------
 
     # Encoder_optimizer = torch.optim.Adam(
@@ -73,7 +79,7 @@ if __name__ == '__main__':
     AE_optimizer = torch.optim.Adam(params=list(Encoder_AB.parameters())+list(Decoder_A.parameters())+list(Decoder_B.parameters()),
                                     lr=5e-5, betas=(0.5, 0.999))
 
-    Logger = LogModel(input_size, model_name="zyl2cky")
+    Logger = LogModel(input_size, model_name="girlB2A")
     iter_epoch = Logger.load_model(
         Encoder_AB, Decoder_A, Decoder_B)
     # iter_epoch = 0
@@ -83,7 +89,7 @@ if __name__ == '__main__':
     Decoder_B.train()
 
     loss_visualize = LossVisualize(
-        title="Loss of Model", resolution=input_size, loss_name="zyl2cky")
+        title="Loss of Model", resolution=input_size, loss_name="girlB2A")
 
     for epoch in tqdm(range(iter_epoch, num_epoch)):
         for i, (img_src, img_obj) in enumerate(dataloader):
@@ -95,15 +101,15 @@ if __name__ == '__main__':
             # +criterion(img_src['mask'].cpu(), src_out.cpu(), img_src['rgb'].cpu())
             # criterion_cnt((src_out.cpu()).cuda()*255, (img_src['rgb']).cuda()*255).cpu()
             loss_mask_src = criterion_pixel_mask(
-                src_mask.cpu(), img_src['mask_label'])
-            loss_src = criterion(img_src['mask_label'].cpu(),
-                                 src_out.cpu(), img_src['rgb_label'].cpu()) + loss_mask_src
+                src_mask.to(mseloss_device), img_src['mask_label'].to(mseloss_device))
+            loss_src = criterion(img_src['mask_label'].to(maskloss_device),
+                                 src_out.to(maskloss_device), img_src['rgb_label'].to(maskloss_device)) + loss_mask_src
             # +criterion(img_obj['mask'].cpu(), obj_out.cpu(), img_obj['rgb'].cpu())
             # criterion_cnt((obj_out.cpu()).cuda()*255, (img_obj['rgb']).cuda()*255).cpu()
             loss_mask_obj = criterion_pixel_mask(
-                obj_mask.cpu(), img_obj['mask_label'])
-            loss_obj = criterion(img_obj['mask_label'].cpu(),
-                                 obj_out.cpu(), img_obj['rgb_label'].cpu())+loss_mask_obj
+                obj_mask.to(mseloss_device), img_obj['mask_label'].to(mseloss_device))
+            loss_obj = criterion(img_obj['mask_label'].to(maskloss_device),
+                                 obj_out, img_obj['rgb_label'].to(maskloss_device))+loss_mask_obj
             loss_mask = loss_mask_obj + loss_mask_src
             # loss = loss_src+loss_obj + loss_mask
 

@@ -12,9 +12,10 @@ from torch.nn import functional as F
 
 
 class MaskLoss(nn.Module):
-    def __init__(self, is_mse=True):
+    def __init__(self, is_mse=True, device="cuda"):
         super(MaskLoss, self).__init__()
         self.is_mes = is_mse
+        self.device = device
 
     def forward(self, mask, image, label):
         if self.is_mes:
@@ -23,11 +24,11 @@ class MaskLoss(nn.Module):
             # num = 0
             # mask = torch.unsqueeze(mask, 1)
             # -----------------------gaussian filter mask-------------------------------------------
-            gaussian_blur = GaussianSmoothing(1, 5, 2.0)
+            gaussian_blur = GaussianSmoothing(1, 5, 2.0).to(self.device)
             mask = F.pad(mask, (2, 2, 2, 2), mode='reflect')
             mask = gaussian_blur(mask)
             temp_mask = mask.repeat(1, 3, 1, 1)
-            visualize_output("temp_mask", temp_mask)
+            # visualize_output("temp_mask", temp_mask)
             # --------------------------------------------------------------------------------------
             flat_mask = torch.flatten(temp_mask)
             loss = torch.mean(diff2*flat_mask)

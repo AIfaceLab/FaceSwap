@@ -1,0 +1,7 @@
+/__pycache__/
+/data/
+*.png
+/results/
+/Training_Results/
+*.tar
+*.pth
