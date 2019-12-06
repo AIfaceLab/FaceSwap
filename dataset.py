@@ -121,7 +121,7 @@ class RandomRotation(object):
         # M[1, 2] += (nH / 2) - cY
 
         # perform the actual rotation and return the image
-        return cv2.warpAffine(image, M, (w, h), flags=cv2.INTER_CUBIC)
+        return cv2.warpAffine(image, M, (w, h), borderMode=cv2.BORDER_REPLICATE, flags=cv2.INTER_CUBIC)
 
     def __call__(self, images):
         angle = np.random.randint(-self.angle, self.angle)
